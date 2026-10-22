@@ -38,7 +38,8 @@ async function api(request,env){
   const id=crypto.randomUUID();await env.DB.prepare('INSERT INTO messages(id,name,company,email,service,message,created_at) VALUES(?,?,?,?,?,?,?)').bind(id,clean.name,clean.company,clean.email,clean.service,clean.message,now()).run();return json({ok:true,id},201);
  }
  if(path==='/api/admin/login'&&method==='POST'){
-  if(!env.ADMIN_PASSWORD||env.ADMIN_PASSWORD.length<16)return json({error:'管理員尚未設定登入密碼。'},503);
+  if(!env.ADMIN_PASSWORD)return json({error:'正式環境尚未收到 ADMIN_PASSWORD，請在 Cloudflare 設定 Secret 並部署。'},503);
+  if(env.ADMIN_PASSWORD.length<16)return json({error:'已收到管理員密碼設定，但長度少於 16 個字元。請在 Cloudflare 更新為至少 16 個字元，然後部署。'},503);
   if(!await rate(env.DB,'login:'+ipHash,8,900))return json({error:'登入嘗試過多，請 15 分鐘後重試。'},429);
   const data=await readJSON(request); const a=await digest(String(data.password||'')),b=await digest(env.ADMIN_PASSWORD);let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);
   if(diff)return json({error:'密碼不正確。'},401);

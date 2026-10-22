@@ -9,6 +9,10 @@ const env={DB,ADMIN_PASSWORD:'local-test-password-only-123',ASSETS:{async fetch(
 const origin='https://example.test';
 function request(path,method='GET',body,headers={}){return worker.fetch(new Request(origin+path,{method,headers:{Origin:origin,'Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{})}),env)}
 test('contact, authentication, CSRF, persistent content and conflicts',async()=>{
+ const savedPassword=env.ADMIN_PASSWORD;
+ env.ADMIN_PASSWORD='';assert.match(await (await request('/api/admin/login','POST',{password:'test'})).text(),/尚未收到/);
+ env.ADMIN_PASSWORD='short';assert.match(await (await request('/api/admin/login','POST',{password:'test'})).text(),/少於 16/);
+ env.ADMIN_PASSWORD=savedPassword;
  assert.equal((await request('/api/admin/messages')).status,401);
  assert.equal((await request('/api/messages','POST',{name:'',company:'',email:'x',service:'IT',message:'test'})).status,400);
  assert.equal((await request('/api/messages','POST',{name:'Test customer',company:'Example',email:'test@example.com',service:'IT',message:'<script>test</script>'})).status,201);
