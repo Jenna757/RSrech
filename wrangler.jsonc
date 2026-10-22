@@ -1,0 +1,15 @@
+{
+  "name": "rsrech",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-22",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/admin", "/admin/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "rsrech-cms",
+    "database_id": "b5d7a952-659a-4b0f-96ad-d4e05c49d695"
+  }]
+}

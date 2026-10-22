@@ -1,0 +1,30 @@
+import {DatabaseSync} from 'node:sqlite';
+import {readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import worker from './worker.mjs';
+const sql=new DatabaseSync(':memory:');
+const DB={prepare(query){let args=[];return {bind(...values){args=values;return this},async first(){return sql.prepare(query).get(...args)||null},async all(){return {results:sql.prepare(query).all(...args)}},async run(){const result=sql.prepare(query).run(...args);return {meta:{changes:Number(result.changes)}}}}},async batch(statements){return Promise.all(statements.map(s=>s.run()))}};
+const env={DB,ADMIN_PASSWORD:'local-test-password-only-123',ASSETS:{async fetch(request){const path=new URL(request.url).pathname;try{return new Response(await readFile(new URL('./dist'+path,import.meta.url)))}catch{return new Response('Not found',{status:404})}}}};
+const origin='https://example.test';
+function request(path,method='GET',body,headers={}){return worker.fetch(new Request(origin+path,{method,headers:{Origin:origin,'Content-Type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{})}),env)}
+test('contact, authentication, CSRF, persistent content and conflicts',async()=>{
+ assert.equal((await request('/api/admin/messages')).status,401);
+ assert.equal((await request('/api/messages','POST',{name:'',company:'',email:'x',service:'IT',message:'test'})).status,400);
+ assert.equal((await request('/api/messages','POST',{name:'Test customer',company:'Example',email:'test@example.com',service:'IT',message:'<script>test</script>'})).status,201);
+ assert.equal((await request('/api/admin/login','POST',{password:'wrong'})).status,401);
+ const login=await request('/api/admin/login','POST',{password:env.ADMIN_PASSWORD});assert.equal(login.status,200);assert.match(login.headers.get('Set-Cookie'),/HttpOnly; Secure; SameSite=Strict/);const {csrf}=await login.json(),Cookie=login.headers.get('Set-Cookie').split(';')[0];const auth={Cookie,'X-CSRF-Token':csrf};
+ const messages=await (await request('/api/admin/messages','GET',null,auth)).json();assert.equal(messages.total,1);assert.equal(messages.messages[0].message,'<script>test</script>');
+ assert.equal((await request('/api/admin/messages/'+messages.messages[0].id,'PATCH',{status:'done'},{Cookie})).status,403);
+ assert.equal((await request('/api/admin/messages/'+messages.messages[0].id,'PATCH',{status:'done'},auth)).status,200);
+ const initial=await (await request('/api/content')).json();initial.content.text[0].zh='Updated';
+ assert.equal((await request('/api/admin/content','PUT',initial,{...auth,Origin:'https://evil.test'})).status,403);
+ assert.equal((await request('/api/admin/content','PUT',initial,auth)).status,200);
+ assert.equal((await request('/api/admin/content','PUT',initial,auth)).status,409);
+ const current=await (await request('/api/content')).json();assert.equal(current.content.text[0].zh,'Updated');assert.equal(current.version,1);
+ current.content.text[0].zh='Updated again';assert.equal((await request('/api/admin/content','PUT',current,auth)).status,200);
+ assert.equal((await (await request('/api/content')).json()).version,2);
+ assert.equal((await request('/api/admin/content','PUT',{content:{},version:2},auth)).status,400);
+ const admin=await request('/admin/index.html');assert.equal(admin.status,200);assert.match(admin.headers.get('Content-Security-Policy'),/frame-ancestors 'none'/);
+ assert.equal((await request('/api/admin/logout','POST',{},auth)).status,200);assert.equal((await request('/api/admin/messages','GET',null,auth)).status,401);
+});
